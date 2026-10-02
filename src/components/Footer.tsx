@@ -13,7 +13,7 @@ export default function Footer() {
           </div>
           
           <div className="text-center text-sm text-slate-500">
-            Анализ выполнен на основе публично доступной информации сайта nic-conf.ru
+            Анализ выполнен на основе публично доступной информации сайта
           </div>
           
           <div className="text-sm text-slate-500">

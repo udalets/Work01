@@ -7,7 +7,9 @@ import PriorityMatrix from './components/PriorityMatrix';
 import Footer from './components/Footer';
 import UrlInput from './components/UrlInput';
 import AnalyzingScreen from './components/AnalyzingScreen';
-import { analysisData, AnalysisData } from './data/analysisData';
+import { analyzeWebsite, AnalysisResult } from './services/analyzer';
+import { convertToAnalysisData } from './services/adapter';
+import { AnalysisData } from './data/analysisData';
 
 function App() {
   const [activeTab, setActiveTab] = useState('overview');
@@ -16,27 +18,32 @@ function App() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisComplete, setAnalysisComplete] = useState(false);
   const [currentData, setCurrentData] = useState<AnalysisData | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setIsLoaded(true);
   }, []);
 
-  const handleAnalyze = (url: string) => {
+  const handleAnalyze = async (url: string) => {
     setSiteUrl(url);
     setIsAnalyzing(true);
     setAnalysisComplete(false);
     setCurrentData(null);
+    setError(null);
     setActiveTab('overview');
-  };
 
-  const handleAnalysisFinish = () => {
-    setIsAnalyzing(false);
-    setAnalysisComplete(true);
-    // Обновляем данные с новым URL
-    setCurrentData({
-      ...analysisData,
-      siteUrl: siteUrl,
-    });
+    try {
+      // Запускаем реальный анализ
+      const result: AnalysisResult = await analyzeWebsite(url);
+      const convertedData = convertToAnalysisData(result);
+      
+      setCurrentData(convertedData);
+      setAnalysisComplete(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Произошла ошибка при анализе сайта');
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   const handleReset = () => {
@@ -44,6 +51,7 @@ function App() {
     setIsAnalyzing(false);
     setAnalysisComplete(false);
     setCurrentData(null);
+    setError(null);
   };
 
   return (
@@ -52,13 +60,44 @@ function App() {
       
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* URL Input */}
-        {!isAnalyzing && !analysisComplete && (
+        {!isAnalyzing && !analysisComplete && !error && (
           <UrlInput onAnalyze={handleAnalyze} />
+        )}
+
+        {/* Error State */}
+        {error && (
+          <div className="max-w-2xl mx-auto">
+            <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-6">
+              <div className="flex items-start gap-4">
+                <div className="flex-shrink-0">
+                  <span className="text-3xl">⚠️</span>
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-semibold text-red-400 mb-2">Ошибка анализа</h3>
+                  <p className="text-slate-300 mb-4">{error}</p>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => handleAnalyze(siteUrl)}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
+                    >
+                      Повторить анализ
+                    </button>
+                    <button
+                      onClick={handleReset}
+                      className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors"
+                    >
+                      Анализировать другой сайт
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* Analyzing Animation */}
         {isAnalyzing && (
-          <AnalyzingScreen url={siteUrl} onFinish={handleAnalysisFinish} />
+          <AnalyzingScreen url={siteUrl} />
         )}
 
         {/* Results */}
