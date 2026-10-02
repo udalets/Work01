@@ -10,6 +10,7 @@ import AnalyzingScreen from './components/AnalyzingScreen';
 import { analyzeWebsite, AnalysisResult } from './services/analyzer';
 import { convertToAnalysisData } from './services/adapter';
 import { AnalysisData } from './data/analysisData';
+import { getDemoData } from './services/demoData';
 
 function App() {
   const [activeTab, setActiveTab] = useState('overview');
@@ -34,9 +35,19 @@ function App() {
     
     try {
       results.push('⏳ Начало анализа...');
-      const result = await analyzeWebsite(url);
+      let result: AnalysisResult;
       
-      results.push(`✅ Анализ завершён успешно!`);
+      try {
+        // Пытаемся реальный анализ
+        result = await analyzeWebsite(url);
+        results.push('✅ Реальный анализ завершён успешно!');
+      } catch (realError) {
+        // Если не получилось, используем демо-данные
+        results.push('⚠️ Реальный анализ недоступен, используем демо-данные...');
+        result = getDemoData(url);
+        results.push('✅ Демо-анализ завершён успешно!');
+      }
+      
       results.push(`\n📊 Результаты:`);
       results.push(`  • Общая оценка: ${result.overallScore}/100`);
       results.push(`  • Контент: ${result.contentScore}/100`);
@@ -104,7 +115,7 @@ function App() {
     setTestResults(allResults);
   };
 
-  const handleAnalyze = async (url: string) => {
+  const handleAnalyze = async (url: string, useDemo: boolean = false) => {
     setSiteUrl(url);
     setIsAnalyzing(true);
     setAnalysisComplete(false);
@@ -113,14 +124,40 @@ function App() {
     setActiveTab('overview');
 
     try {
-      // Запускаем реальный анализ
-      const result: AnalysisResult = await analyzeWebsite(url);
+      let result: AnalysisResult;
+      
+      if (useDemo) {
+        // Используем демо-данные
+        result = getDemoData(url);
+      } else {
+        // Запускаем реальный анализ
+        result = await analyzeWebsite(url);
+      }
+      
       const convertedData = convertToAnalysisData(result);
       
       setCurrentData(convertedData);
       setAnalysisComplete(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Произошла ошибка при анализе сайта');
+      const errorMessage = err instanceof Error ? err.message : 'Произошла ошибка при анализе сайта';
+      
+      // Добавляем подсказки в зависимости от типа ошибки
+      let helpfulMessage = errorMessage;
+      if (errorMessage.includes('timed out') || errorMessage.includes('timeout')) {
+        helpfulMessage = 'Превышено время ожидания ответа от сервера. Это может быть связано с:\n' +
+          '• Медленным интернет-соединением\n' +
+          '• Недоступностью CORS прокси\n' +
+          '• Блокировкой запросов сайтом\n\n' +
+          'Попробуйте повторить анализ или использовать демо-режим.';
+      } else if (errorMessage.includes('Failed to fetch') || errorMessage.includes('NetworkError')) {
+        helpfulMessage = 'Не удалось установить соединение с сервером. Проверьте:\n' +
+          '• Подключение к интернету\n' +
+          '• Правильность URL адреса\n' +
+          '• Доступность сайта\n\n' +
+          'Или используйте демо-режим для просмотра примера работы.';
+      }
+      
+      setError(helpfulMessage);
     } finally {
       setIsAnalyzing(false);
     }
@@ -191,13 +228,23 @@ function App() {
                 </div>
                 <div className="flex-1">
                   <h3 className="text-lg font-semibold text-red-400 mb-2">Ошибка анализа</h3>
-                  <p className="text-slate-300 mb-4">{error}</p>
-                  <div className="flex gap-3">
+                  <p className="text-slate-300 mb-4 whitespace-pre-line">{error}</p>
+                  <div className="flex flex-wrap gap-3">
                     <button
                       onClick={() => handleAnalyze(siteUrl)}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors flex items-center gap-2"
                     >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
                       Повторить анализ
+                    </button>
+                    <button
+                      onClick={() => handleAnalyze(siteUrl, true)}
+                      className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg transition-colors flex items-center gap-2"
+                    >
+                      <span>🎭</span>
+                      Демо-режим
                     </button>
                     <button
                       onClick={handleReset}

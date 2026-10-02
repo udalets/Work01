@@ -111,11 +111,14 @@ interface ParsedData {
   foundHeadings: { level: number; text: string }[];
 }
 
-// Multiple CORS proxies for fallback
+// Multiple CORS proxies for fallback - using most reliable ones
 const CORS_PROXIES = [
-  (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+  (url: string) => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
   (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
   (url: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+  (url: string) => `https://thingproxy.freeboard.io/fetch/${url}`,
+  (url: string) => `https://cors.bridged.cc/${url}`,
+  (url: string) => `https://yacdn.org/proxy/${url}`,
 ];
 
 // Safe timeout that works in all browsers
@@ -136,10 +139,12 @@ function createTimeout(ms: number): AbortSignal | undefined {
 async function fetchWithProxy(url: string): Promise<string> {
   let lastError: Error | null = null;
   
-  for (const proxyFn of CORS_PROXIES) {
+  // Try all proxies in parallel and return first successful result
+  const promises = CORS_PROXIES.map(async (proxyFn, index) => {
     try {
       const proxyUrl = proxyFn(url);
-      const signal = createTimeout(20000);
+      // Increased timeout to 30 seconds
+      const signal = createTimeout(30000);
       
       const response = await fetch(proxyUrl, {
         signal,
@@ -149,20 +154,44 @@ async function fetchWithProxy(url: string): Promise<string> {
       });
       
       if (response.ok) {
-        const text = await response.text();
+        let text = await response.text();
+        
+        // allorigins.win returns JSON with contents field
+        if (index === 0 && text.trim().startsWith('{')) {
+          try {
+            const json = JSON.parse(text);
+            if (json.contents) {
+              text = json.contents;
+            }
+          } catch {
+            // Not JSON, continue with raw text
+          }
+        }
+        
         // Verify we got actual HTML content
         if (text && text.length > 200) {
           return text;
         }
       }
+      return null;
     } catch (e) {
-      lastError = e instanceof Error ? e : new Error(String(e));
-      // Try next proxy
-      continue;
+      return null;
     }
+  });
+  
+  // Wait for first successful result
+  try {
+    const results = await Promise.all(promises);
+    for (const result of results) {
+      if (result !== null) {
+        return result;
+      }
+    }
+  } catch (e) {
+    lastError = e instanceof Error ? e : new Error(String(e));
   }
   
-  throw lastError || new Error('Не удалось получить доступ к сайту. Все прокси недоступны.');
+  throw lastError || new Error('Не удалось получить доступ к сайту. Все прокси недоступны или вернули некорректные данные.');
 }
 
 function safeParseHTML(html: string, url: string): ParsedData {
@@ -418,23 +447,39 @@ async function checkExternalResource(url: string, path: string): Promise<boolean
     const urlObj = new URL(url);
     const checkUrl = `${urlObj.origin}${path}`;
     
-    // Try multiple proxies
-    for (const proxyFn of CORS_PROXIES) {
+    // Try all proxies in parallel
+    const promises = CORS_PROXIES.map(async (proxyFn, index) => {
       try {
-        const signal = createTimeout(8000);
+        const signal = createTimeout(15000);
         const response = await fetch(proxyFn(checkUrl), { signal });
         if (response.ok) {
-          const text = await response.text();
+          let text = await response.text();
+          
+          // allorigins.win returns JSON
+          if (index === 0 && text.trim().startsWith('{')) {
+            try {
+              const json = JSON.parse(text);
+              if (json.contents) {
+                text = json.contents;
+              }
+            } catch {
+              // Not JSON
+            }
+          }
+          
           // Verify it's not an error page
-          if (text && text.length > 10 && !text.includes('404') && !text.includes('Not Found')) {
+          if (text && text.length > 10 && !text.includes('404 Not Found')) {
             return true;
           }
         }
+        return false;
       } catch {
-        continue;
+        return false;
       }
-    }
-    return false;
+    });
+    
+    const results = await Promise.all(promises);
+    return results.some(r => r === true);
   } catch {
     return false;
   }
@@ -871,13 +916,27 @@ export async function analyzeWebsite(url: string): Promise<AnalysisResult> {
     throw new Error('Некорректный URL. Проверьте правильность адреса сайта.');
   }
 
-  // Fetch HTML
+  // Fetch HTML with retry logic
   let html: string;
-  try {
-    html = await fetchWithProxy(normalizedUrl);
-  } catch (e) {
-    const errorMsg = e instanceof Error ? e.message : 'Неизвестная ошибка';
-    throw new Error(`Не удалось загрузить сайт: ${errorMsg}. Проверьте правильность URL и доступность сайта.`);
+  let lastError: Error | null = null;
+  
+  // Try up to 2 times
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      html = await fetchWithProxy(normalizedUrl);
+      break; // Success, exit retry loop
+    } catch (e) {
+      lastError = e instanceof Error ? e : new Error(String(e));
+      if (attempt < 2) {
+        // Wait before retry
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+  }
+  
+  if (!html!) {
+    const errorMsg = lastError instanceof Error ? lastError.message : 'Неизвестная ошибка';
+    throw new Error(`Не удалось загрузить сайт после 2 попыток: ${errorMsg}\n\nВозможные причины:\n• CORS прокси временно недоступны\n• Сайт блокирует запросы\n• Проблемы с интернет-соединением\n\nПопробуйте повторить анализ через несколько секунд.`);
   }
   
   if (!html || html.length < 100) {
