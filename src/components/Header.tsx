@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 
 export default function Header() {
   const [typedText, setTypedText] = useState('');
-  const fullText = 'AI-агент анализа сайта конференций';
+  const fullText = 'AI-агент анализа веб-сайтов';
   
   useEffect(() => {
     let index = 0;
@@ -43,22 +43,22 @@ export default function Header() {
         </h1>
         
         <p className="text-lg text-slate-300 max-w-3xl mb-6">
-          Комплексный анализ сайта <a href="https://nic-conf.ru/" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline underline-offset-2 transition-colors">nic-conf.ru</a> — 
-          XXI Всероссийской научно-практической конференции «Связь. Перспективы. Технологии 2030»
+          Введите URL любого сайта, и AI-агент проведёт комплексный анализ контента, UX/UI, SEO и технической части, 
+          предоставив конкретные рекомендации по улучшению.
         </p>
         
         <div className="flex flex-wrap gap-4 text-sm">
           <div className="flex items-center gap-2 bg-slate-800/60 px-3 py-1.5 rounded-full border border-slate-700/50">
             <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-            <span className="text-slate-300">Анализ завершён</span>
-          </div>
-          <div className="flex items-center gap-2 bg-slate-800/60 px-3 py-1.5 rounded-full border border-slate-700/50">
-            <span className="text-slate-400">📅</span>
-            <span className="text-slate-300">Дата анализа: 15 января 2026</span>
+            <span className="text-slate-300">AI-агент готов к работе</span>
           </div>
           <div className="flex items-center gap-2 bg-slate-800/60 px-3 py-1.5 rounded-full border border-slate-700/50">
             <span className="text-slate-400">🔍</span>
-            <span className="text-slate-300">Проверено: 24 параметра</span>
+            <span className="text-slate-300">Анализ 24+ параметров</span>
+          </div>
+          <div className="flex items-center gap-2 bg-slate-800/60 px-3 py-1.5 rounded-full border border-slate-700/50">
+            <span className="text-slate-400">💡</span>
+            <span className="text-slate-300">Персональные рекомендации</span>
           </div>
         </div>
       </div>
