@@ -22,6 +22,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [testMode, setTestMode] = useState(false);
   const [testResults, setTestResults] = useState<string[]>([]);
+  const [usingDemoData, setUsingDemoData] = useState(false);
 
   useEffect(() => {
     setIsLoaded(true);
@@ -125,16 +126,33 @@ function App() {
 
     try {
       let result: AnalysisResult;
+      let usedDemoFallback = false;
       
       if (useDemo) {
         // Используем демо-данные
         result = getDemoData(url);
+        usedDemoFallback = true;
       } else {
-        // Запускаем реальный анализ
-        result = await analyzeWebsite(url);
+        // Пытаемся запустить реальный анализ
+        try {
+          result = await analyzeWebsite(url);
+        } catch (analyzeError) {
+          // Если реальный анализ не удался, автоматически используем демо-данные
+          console.warn('Реальный анализ не удался, используем демо-данные:', analyzeError);
+          result = getDemoData(url);
+          usedDemoFallback = true;
+        }
       }
       
       const convertedData = convertToAnalysisData(result);
+      
+      // Если использовали демо-данные, добавляем уведомление
+      if (usedDemoFallback) {
+        console.log('Используются демо-данные для URL:', url);
+        setUsingDemoData(true);
+      } else {
+        setUsingDemoData(false);
+      }
       
       setCurrentData(convertedData);
       setAnalysisComplete(true);
@@ -144,17 +162,19 @@ function App() {
       // Добавляем подсказки в зависимости от типа ошибки
       let helpfulMessage = errorMessage;
       if (errorMessage.includes('timed out') || errorMessage.includes('timeout')) {
-        helpfulMessage = 'Превышено время ожидания ответа от сервера. Это может быть связано с:\n' +
-          '• Медленным интернет-соединением\n' +
-          '• Недоступностью CORS прокси\n' +
-          '• Блокировкой запросов сайтом\n\n' +
-          'Попробуйте повторить анализ или использовать демо-режим.';
+        helpfulMessage = '⏱️ Превышено время ожидания ответа от сервера.\n\n' +
+          'Возможные причины:\n' +
+          '• Медленное интернет-соединение\n' +
+          '• CORS прокси временно недоступны\n' +
+          '• Сайт блокирует запросы\n\n' +
+          '💡 Решение: Попробуйте повторить анализ через несколько секунд.';
       } else if (errorMessage.includes('Failed to fetch') || errorMessage.includes('NetworkError')) {
-        helpfulMessage = 'Не удалось установить соединение с сервером. Проверьте:\n' +
+        helpfulMessage = '🔌 Не удалось установить соединение с сервером.\n\n' +
+          'Проверьте:\n' +
           '• Подключение к интернету\n' +
           '• Правильность URL адреса\n' +
-          '• Доступность сайта\n\n' +
-          'Или используйте демо-режим для просмотра примера работы.';
+          '• Доступность сайта в браузере\n\n' +
+          '💡 Решение: Убедитесь, что сайт открывается в новой вкладке.';
       }
       
       setError(helpfulMessage);
@@ -269,7 +289,7 @@ function App() {
           <>
             {/* Analyzed URL Bar */}
             <div className="mb-6 flex items-center justify-between bg-slate-800/60 rounded-xl p-4 border border-slate-700/50 backdrop-blur-sm">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
                 <div className="w-3 h-3 rounded-full bg-green-400 animate-pulse" />
                 <span className="text-sm text-slate-400">Проанализирован сайт:</span>
                 <a 
@@ -280,6 +300,11 @@ function App() {
                 >
                   {currentData.siteUrl}
                 </a>
+                {usingDemoData && (
+                  <span className="px-2 py-1 bg-yellow-500/20 text-yellow-300 text-xs rounded-full border border-yellow-500/30">
+                    🎭 Демо-данные
+                  </span>
+                )}
               </div>
               <button
                 onClick={handleReset}

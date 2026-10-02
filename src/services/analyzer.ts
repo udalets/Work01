@@ -113,12 +113,46 @@ interface ParsedData {
 
 // Multiple CORS proxies for fallback - using most reliable ones
 const CORS_PROXIES = [
-  (url: string) => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
-  (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
-  (url: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-  (url: string) => `https://thingproxy.freeboard.io/fetch/${url}`,
-  (url: string) => `https://cors.bridged.cc/${url}`,
-  (url: string) => `https://yacdn.org/proxy/${url}`,
+  {
+    name: 'AllOrigins',
+    fn: (url: string) => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+    isJson: true,
+  },
+  {
+    name: 'CorsProxy.io',
+    fn: (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+    isJson: false,
+  },
+  {
+    name: 'CodeTabs',
+    fn: (url: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+    isJson: false,
+  },
+  {
+    name: 'ThingProxy',
+    fn: (url: string) => `https://thingproxy.freeboard.io/fetch/${url}`,
+    isJson: false,
+  },
+  {
+    name: 'Bridged',
+    fn: (url: string) => `https://cors.bridged.cc/${url}`,
+    isJson: false,
+  },
+  {
+    name: 'YaCDN',
+    fn: (url: string) => `https://yacdn.org/proxy/${url}`,
+    isJson: false,
+  },
+  {
+    name: 'ProxyCORS',
+    fn: (url: string) => `https://api.proxy-cors.com/get?url=${encodeURIComponent(url)}`,
+    isJson: false,
+  },
+  {
+    name: 'CrossOrigin',
+    fn: (url: string) => `https://crossorigin.me/${url}`,
+    isJson: false,
+  },
 ];
 
 // Safe timeout that works in all browsers
@@ -138,13 +172,14 @@ function createTimeout(ms: number): AbortSignal | undefined {
 
 async function fetchWithProxy(url: string): Promise<string> {
   let lastError: Error | null = null;
+  const failedProxies: string[] = [];
   
   // Try all proxies in parallel and return first successful result
-  const promises = CORS_PROXIES.map(async (proxyFn, index) => {
+  const promises = CORS_PROXIES.map(async (proxy) => {
     try {
-      const proxyUrl = proxyFn(url);
-      // Increased timeout to 30 seconds
-      const signal = createTimeout(30000);
+      const proxyUrl = proxy.fn(url);
+      // Increased timeout to 45 seconds for better reliability
+      const signal = createTimeout(45000);
       
       const response = await fetch(proxyUrl, {
         signal,
@@ -156,8 +191,8 @@ async function fetchWithProxy(url: string): Promise<string> {
       if (response.ok) {
         let text = await response.text();
         
-        // allorigins.win returns JSON with contents field
-        if (index === 0 && text.trim().startsWith('{')) {
+        // Handle JSON response from allorigins.win
+        if (proxy.isJson && text.trim().startsWith('{')) {
           try {
             const json = JSON.parse(text);
             if (json.contents) {
@@ -170,28 +205,60 @@ async function fetchWithProxy(url: string): Promise<string> {
         
         // Verify we got actual HTML content
         if (text && text.length > 200) {
-          return text;
+          return { success: true, text, proxyName: proxy.name };
         }
       }
-      return null;
+      return { success: false, text: '', proxyName: proxy.name };
     } catch (e) {
-      return null;
+      failedProxies.push(proxy.name);
+      return { success: false, text: '', proxyName: proxy.name };
     }
   });
   
-  // Wait for first successful result
+  // Wait for all results
   try {
     const results = await Promise.all(promises);
     for (const result of results) {
-      if (result !== null) {
-        return result;
+      if (result.success && result.text) {
+        return result.text;
       }
     }
   } catch (e) {
     lastError = e instanceof Error ? e : new Error(String(e));
   }
   
-  throw lastError || new Error('Не удалось получить доступ к сайту. Все прокси недоступны или вернули некорректные данные.');
+  // Try direct request as last resort (may fail due to CORS)
+  try {
+    const signal = createTimeout(30000);
+    const directResponse = await fetch(url, {
+      signal,
+      mode: 'cors',
+      headers: {
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+    });
+    
+    if (directResponse.ok) {
+      const text = await directResponse.text();
+      if (text && text.length > 200) {
+        return text;
+      }
+    }
+  } catch (e) {
+    // Direct request failed, continue with error from proxies
+  }
+  
+  const proxyList = failedProxies.length > 0 ? failedProxies.join(', ') : 'все доступные';
+  throw lastError || new Error(`Не удалось получить доступ к сайту через CORS прокси (${proxyList}). Возможные причины:
+• Сайт недоступен или требует авторизации
+• Сайт блокирует запросы из браузера
+• Все CORS прокси временно недоступны
+• Неверный URL
+
+Попробуйте:
+1. Проверить правильность URL
+2. Убедиться, что сайт открывается в браузере
+3. Попробовать позже (прокси могут быть перегружены)`);
 }
 
 function safeParseHTML(html: string, url: string): ParsedData {
@@ -448,15 +515,15 @@ async function checkExternalResource(url: string, path: string): Promise<boolean
     const checkUrl = `${urlObj.origin}${path}`;
     
     // Try all proxies in parallel
-    const promises = CORS_PROXIES.map(async (proxyFn, index) => {
+    const promises = CORS_PROXIES.map(async (proxy) => {
       try {
         const signal = createTimeout(15000);
-        const response = await fetch(proxyFn(checkUrl), { signal });
+        const response = await fetch(proxy.fn(checkUrl), { signal });
         if (response.ok) {
           let text = await response.text();
           
-          // allorigins.win returns JSON
-          if (index === 0 && text.trim().startsWith('{')) {
+          // Handle JSON response
+          if (proxy.isJson && text.trim().startsWith('{')) {
             try {
               const json = JSON.parse(text);
               if (json.contents) {
