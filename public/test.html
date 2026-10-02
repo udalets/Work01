@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Тест анализатора - Простая проверка</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a2e;
+            color: #eee;
+        }
+        h1 { color: #4ecca3; }
+        .test-box {
+            background: #16213e;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border: 1px solid #0f3460;
+        }
+        button {
+            background: #4ecca3;
+            color: #1a1a2e;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 16px;
+        }
+        button:hover { background: #3dbd94; }
+        .result {
+            background: #0f3460;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 15px;
+            white-space: pre-wrap;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .success { color: #4ecca3; }
+        .error { color: #e94560; }
+        .info { color: #f39c12; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Тест анализатора сайтов</h1>
+    
+    <div class="test-box">
+        <h2>Инструкция</h2>
+        <p>1. Откройте основное приложение: <a href="index.html" style="color: #4ecca3;">index.html</a></p>
+        <p>2. Нажмите кнопку "🧪 Запустить автоматические тесты"</p>
+        <p>3. Дождитесь завершения тестов</p>
+        <p>4. Проверьте результаты для обоих сайтов</p>
+    </div>
+
+    <div class="test-box">
+        <h2>Быстрый тест (в консоли браузера)</h2>
+        <p>Откройте консоль браузера (F12) и выполните:</p>
+        <pre style="background: #0f3460; padding: 10px; border-radius: 5px; overflow-x: auto;">
+// Тест 1: Проверка URL
+const url1 = 'https://expomap.ru/conference/nedelya-bezopasnosti-techexpert/';
+const url2 = 'https://nic-conf.ru/';
+console.log('URL 1:', new URL(url1).hostname);
+console.log('URL 2:', new URL(url2).hostname);
+
+// Тест 2: Проверка структуры данных
+const testData = {
+    overallScore: 75,
+    content: { score: 80, issues: [] },
+    ux: { score: 70, issues: [] },
+    seo: { score: 65, issues: [] },
+    technical: { score: 85, issues: [] }
+};
+console.log('Test data:', testData);
+console.log('Average:', (testData.content.score + testData.ux.score + testData.seo.score + testData.technical.score) / 4);
+        </pre>
+    </div>
+
+    <div class="test-box">
+        <h2>Проверка файлов</h2>
+        <button onclick="checkFiles()">Проверить все файлы</button>
+        <div id="fileCheck" class="result" style="display: none;"></div>
+    </div>
+
+    <script>
+        async function checkFiles() {
+            const resultDiv = document.getElementById('fileCheck');
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = '';
+            
+            const files = [
+                'src/App.tsx',
+                'src/services/analyzer.ts',
+                'src/services/adapter.ts',
+                'src/components/Header.tsx',
+                'src/components/UrlInput.tsx',
+                'src/components/ScoreOverview.tsx',
+            ];
+            
+            let output = '📁 Проверка файлов:\n\n';
+            
+            for (const file of files) {
+                try {
+                    const response = await fetch(file);
+                    if (response.ok) {
+                        output += `✅ ${file}\n`;
+                    } else {
+                        output += `❌ ${file} (статус: ${response.status})\n`;
+                    }
+                } catch (error) {
+                    output += `❌ ${file} (ошибка: ${error.message})\n`;
+                }
+            }
+            
+            output += '\n✅ Проверка завершена';
+            resultDiv.textContent = output;
+        }
+    </script>
+</body>
+</html>
