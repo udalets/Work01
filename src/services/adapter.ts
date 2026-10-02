@@ -26,9 +26,16 @@ export function convertToAnalysisData(result: AnalysisResult): AnalysisData {
     issues: result.issues.filter(i => i.category === 'technical'),
   };
 
+  let hostname = '';
+  try {
+    hostname = new URL(result.url).hostname;
+  } catch {
+    hostname = result.url;
+  }
+
   return {
     overallScore: result.overallScore,
-    siteName: result.title || new URL(result.url).hostname,
+    siteName: result.title || hostname,
     siteUrl: result.url,
     analyzedAt: result.fetchedAt,
     content: contentSection,

@@ -10,8 +10,10 @@ export default function UrlInput({ onAnalyze }: Props) {
 
   const validateUrl = (input: string): boolean => {
     try {
-      const urlObj = new URL(input.startsWith('http') ? input : `https://${input}`);
-      return urlObj.hostname.includes('.');
+      const normalized = input.startsWith('http') ? input : `https://${input}`;
+      const urlObj = new URL(normalized);
+      // Check that hostname has at least one dot (domain.tld)
+      return urlObj.hostname.includes('.') && urlObj.hostname.length > 3;
     } catch {
       return false;
     }
@@ -38,9 +40,9 @@ export default function UrlInput({ onAnalyze }: Props) {
 
   const quickExamples = [
     'nic-conf.ru',
-    'ted.com',
-    'python.ru',
+    'expomap.ru/conference/nedelya-bezopasnosti-techexpert/',
     'habr.com',
+    'ted.com',
   ];
 
   return (

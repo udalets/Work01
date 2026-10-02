@@ -56,6 +56,13 @@ export default function AnalysisSection({ title, icon, section }: Props) {
 
       {/* Issues List */}
       <div className="space-y-3">
+        {section.issues.length === 0 && (
+          <div className="bg-green-500/10 rounded-xl p-6 border border-green-500/20 text-center">
+            <span className="text-3xl mb-2 block">✅</span>
+            <p className="text-green-300 font-medium">Проблем в данной категории не обнаружено!</p>
+            <p className="text-slate-400 text-sm mt-1">Этот аспект сайта реализован хорошо.</p>
+          </div>
+        )}
         {section.issues.map((issue) => (
           <div 
             key={issue.id}

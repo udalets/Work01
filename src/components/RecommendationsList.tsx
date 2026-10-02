@@ -83,6 +83,17 @@ export default function RecommendationsList({ data }: Props) {
 
       {/* Recommendations */}
       <div className="space-y-4">
+        {filteredIssues.length === 0 && (
+          <div className="bg-green-500/10 rounded-xl p-8 border border-green-500/20 text-center">
+            <span className="text-4xl mb-3 block">🎉</span>
+            <p className="text-green-300 font-semibold text-lg">Рекомендаций нет!</p>
+            <p className="text-slate-400 mt-2">
+              {filter === 'all' 
+                ? 'Сайт не имеет обнаруженных проблем. Отличная работа!' 
+                : `Нет проблем с приоритетом "${filter}".`}
+            </p>
+          </div>
+        )}
         {filteredIssues.map((issue, index) => (
           <div 
             key={issue.id}

@@ -111,162 +111,330 @@ interface ParsedData {
   foundHeadings: { level: number; text: string }[];
 }
 
+// Multiple CORS proxies for fallback
 const CORS_PROXIES = [
-  'https://api.allorigins.win/raw?url=',
-  'https://corsproxy.io/?',
+  (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+  (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+  (url: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
 ];
+
+// Safe timeout that works in all browsers
+function createTimeout(ms: number): AbortSignal | undefined {
+  try {
+    if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+      return AbortSignal.timeout(ms);
+    }
+    // Fallback for older browsers
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), ms);
+    return controller.signal;
+  } catch {
+    return undefined;
+  }
+}
 
 async function fetchWithProxy(url: string): Promise<string> {
   let lastError: Error | null = null;
   
-  for (const proxy of CORS_PROXIES) {
+  for (const proxyFn of CORS_PROXIES) {
     try {
-      const response = await fetch(`${proxy}${encodeURIComponent(url)}`, {
-        signal: AbortSignal.timeout(15000),
+      const proxyUrl = proxyFn(url);
+      const signal = createTimeout(20000);
+      
+      const response = await fetch(proxyUrl, {
+        signal,
+        headers: {
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        },
       });
+      
       if (response.ok) {
-        return await response.text();
+        const text = await response.text();
+        // Verify we got actual HTML content
+        if (text && text.length > 200) {
+          return text;
+        }
       }
     } catch (e) {
-      lastError = e as Error;
+      lastError = e instanceof Error ? e : new Error(String(e));
+      // Try next proxy
+      continue;
     }
   }
   
-  throw lastError || new Error('Не удалось получить доступ к сайту');
+  throw lastError || new Error('Не удалось получить доступ к сайту. Все прокси недоступны.');
 }
 
-function parseHTML(html: string, url: string): ParsedData {
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(html, 'text/html');
-  const urlObj = new URL(url);
-  const domain = urlObj.hostname;
-
-  // Title
-  const titleEl = doc.querySelector('title');
-  const title = titleEl?.textContent?.trim() || '';
-
-  // Meta description
-  const metaDesc = doc.querySelector('meta[name="description"]') || doc.querySelector('meta[property="og:description"]');
-  const description = metaDesc?.getAttribute('content') || '';
-
-  // Meta tags collection
-  const foundMetaTags: { name: string; content: string }[] = [];
-  doc.querySelectorAll('meta').forEach(meta => {
-    const name = meta.getAttribute('name') || meta.getAttribute('property') || meta.getAttribute('http-equiv') || '';
-    const content = meta.getAttribute('content') || '';
-    if (name && content) {
-      foundMetaTags.push({ name, content });
-    }
-  });
-
-  // Headings
-  const foundHeadings: { level: number; text: string }[] = [];
-  for (let i = 1; i <= 6; i++) {
-    doc.querySelectorAll(`h${i}`).forEach(h => {
-      const text = h.textContent?.trim() || '';
-      if (text) foundHeadings.push({ level: i, text: text.substring(0, 100) });
-    });
-  }
-
-  // H counts
-  const h1Count = doc.querySelectorAll('h1').length;
-  const h2Count = doc.querySelectorAll('h2').length;
-  const h3Count = doc.querySelectorAll('h3').length;
-
-  // Images
-  const images = doc.querySelectorAll('img');
-  const imagesWithoutAlt = Array.from(images).filter(img => !img.getAttribute('alt') || img.getAttribute('alt')?.trim() === '').length;
-
-  // Links
-  const allLinks = doc.querySelectorAll('a[href]');
-  let externalLinks = 0;
-  let internalLinks = 0;
-  allLinks.forEach(link => {
-    const href = link.getAttribute('href') || '';
-    try {
-      const linkUrl = new URL(href, url);
-      if (linkUrl.hostname === domain) {
-        internalLinks++;
-      } else if (href.startsWith('http')) {
-        externalLinks++;
-      }
-    } catch {
-      internalLinks++;
-    }
-  });
-
-  // Word count
-  const bodyText = doc.body?.textContent || '';
-  const wordCount = bodyText.split(/\s+/).filter(w => w.length > 0).length;
-
-  // Various checks
-  const hasOpenGraph = !!doc.querySelector('meta[property="og:title"]');
-  const hasTwitterCard = !!doc.querySelector('meta[name="twitter:card"]') || !!doc.querySelector('meta[property="twitter:card"]');
-  const hasCanonical = !!doc.querySelector('link[rel="canonical"]');
-  const hasViewport = !!doc.querySelector('meta[name="viewport"]');
-  const hasCharset = !!doc.querySelector('meta[charset]') || !!doc.querySelector('meta[http-equiv="Content-Type"]');
-  const hasLang = !!doc.documentElement.getAttribute('lang');
-  const hasRobots = !!doc.querySelector('meta[name="robots"]');
-  const hasFavicon = !!doc.querySelector('link[rel="icon"]') || !!doc.querySelector('link[rel="shortcut icon"]');
-  const hasJsonLd = !!doc.querySelector('script[type="application/ld+json"]');
-  const hasForms = doc.querySelectorAll('form').length > 0;
-  const hasVideo = doc.querySelectorAll('video, iframe[src*="youtube"], iframe[src*="vimeo"]').length > 0;
-  const hasIframe = doc.querySelectorAll('iframe').length > 0;
-  const inlineStyles = doc.querySelectorAll('[style]').length;
-  const scripts = doc.querySelectorAll('script').length;
-  const cssLinks = doc.querySelectorAll('link[rel="stylesheet"]').length;
-
-  return {
-    title,
-    description,
+function safeParseHTML(html: string, url: string): ParsedData {
+  // Default values in case parsing fails
+  const defaults: ParsedData = {
+    title: '',
+    description: '',
     htmlSize: html.length,
     hasSSL: url.startsWith('https'),
-    hasTitle: !!title,
-    titleLength: title.length,
-    hasMetaDescription: !!description,
-    metaDescriptionLength: description.length,
-    hasMetaKeywords: !!doc.querySelector('meta[name="keywords"]'),
-    hasCanonical,
-    hasOpenGraph,
-    hasTwitterCard,
-    hasRobots,
-    hasViewport,
-    hasCharset,
-    hasLang,
-    h1Count,
-    h2Count,
-    h3Count,
-    totalHeadings: foundHeadings.length,
-    totalParagraphs: doc.querySelectorAll('p').length,
-    totalImages: images.length,
-    imagesWithoutAlt,
-    totalLinks: allLinks.length,
-    externalLinks,
-    internalLinks,
-    hasFavicon,
-    wordCount,
+    hasTitle: false,
+    titleLength: 0,
+    hasMetaDescription: false,
+    metaDescriptionLength: 0,
+    hasMetaKeywords: false,
+    hasCanonical: false,
+    hasOpenGraph: false,
+    hasTwitterCard: false,
+    hasRobots: false,
+    hasViewport: false,
+    hasCharset: false,
+    hasLang: false,
+    h1Count: 0,
+    h2Count: 0,
+    h3Count: 0,
+    totalHeadings: 0,
+    totalParagraphs: 0,
+    totalImages: 0,
+    imagesWithoutAlt: 0,
+    totalLinks: 0,
+    externalLinks: 0,
+    internalLinks: 0,
+    hasFavicon: false,
+    wordCount: 0,
     hasHttps: url.startsWith('https'),
-    usesWww: domain.startsWith('www.'),
-    hasForms,
-    hasVideo,
-    hasIframe,
-    hasInlineStyles: inlineStyles,
-    hasScripts: scripts,
-    hasCssLinks: cssLinks,
-    hasJsonLd,
-    foundMetaTags,
-    foundHeadings,
+    usesWww: false,
+    hasForms: false,
+    hasVideo: false,
+    hasIframe: false,
+    hasInlineStyles: 0,
+    hasScripts: 0,
+    hasCssLinks: 0,
+    hasJsonLd: false,
+    foundMetaTags: [],
+    foundHeadings: [],
   };
+
+  try {
+    let domain = '';
+    try {
+      const urlObj = new URL(url);
+      domain = urlObj.hostname;
+      defaults.usesWww = domain.startsWith('www.');
+    } catch {
+      // Invalid URL, use defaults
+    }
+
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+
+    // Check for parser errors
+    const parserError = doc.querySelector('parsererror');
+    if (parserError) {
+      console.warn('HTML parser error detected, proceeding with partial parse');
+    }
+
+    // Title
+    const titleEl = doc.querySelector('title');
+    const title = titleEl?.textContent?.trim() || '';
+
+    // Meta description - try multiple selectors
+    const metaDesc = doc.querySelector('meta[name="description"]') 
+      || doc.querySelector('meta[property="og:description"]')
+      || doc.querySelector('meta[name="Description"]');
+    const description = metaDesc?.getAttribute('content') || '';
+
+    // Meta tags collection
+    const foundMetaTags: { name: string; content: string }[] = [];
+    try {
+      doc.querySelectorAll('meta').forEach(meta => {
+        const name = meta.getAttribute('name') || meta.getAttribute('property') || meta.getAttribute('http-equiv') || '';
+        const content = meta.getAttribute('content') || '';
+        if (name && content) {
+          foundMetaTags.push({ name, content });
+        }
+      });
+    } catch (e) {
+      console.warn('Error parsing meta tags:', e);
+    }
+
+    // Headings
+    const foundHeadings: { level: number; text: string }[] = [];
+    try {
+      for (let i = 1; i <= 6; i++) {
+        doc.querySelectorAll(`h${i}`).forEach(h => {
+          const text = (h.textContent || '').trim();
+          if (text) foundHeadings.push({ level: i, text: text.substring(0, 150) });
+        });
+      }
+    } catch (e) {
+      console.warn('Error parsing headings:', e);
+    }
+
+    // H counts
+    const h1Count = doc.querySelectorAll('h1').length;
+    const h2Count = doc.querySelectorAll('h2').length;
+    const h3Count = doc.querySelectorAll('h3').length;
+
+    // Images
+    let imagesWithoutAlt = 0;
+    try {
+      const images = doc.querySelectorAll('img');
+      imagesWithoutAlt = Array.from(images).filter(img => {
+        const alt = img.getAttribute('alt');
+        return !alt || alt.trim() === '';
+      }).length;
+    } catch (e) {
+      console.warn('Error parsing images:', e);
+    }
+
+    // Links
+    let externalLinks = 0;
+    let internalLinks = 0;
+    let totalLinks = 0;
+    try {
+      const allLinks = doc.querySelectorAll('a[href]');
+      totalLinks = allLinks.length;
+      allLinks.forEach(link => {
+        const href = link.getAttribute('href') || '';
+        try {
+          if (href && (href.startsWith('http') || href.startsWith('/'))) {
+            const linkUrl = new URL(href, url);
+            if (linkUrl.hostname === domain || linkUrl.hostname === `www.${domain}` || `www.${linkUrl.hostname}` === domain) {
+              internalLinks++;
+            } else if (href.startsWith('http')) {
+              externalLinks++;
+            }
+          }
+        } catch {
+          // Relative or invalid link
+          if (href && !href.startsWith('javascript:') && !href.startsWith('mailto:') && !href.startsWith('#')) {
+            internalLinks++;
+          }
+        }
+      });
+    } catch (e) {
+      console.warn('Error parsing links:', e);
+    }
+
+    // Word count
+    let wordCount = 0;
+    try {
+      const bodyText = doc.body?.textContent || '';
+      wordCount = bodyText.split(/\s+/).filter(w => w.length > 0).length;
+    } catch (e) {
+      console.warn('Error counting words:', e);
+    }
+
+    // Various checks with error handling
+    let hasOpenGraph = false;
+    let hasTwitterCard = false;
+    let hasCanonical = false;
+    let hasViewport = false;
+    let hasCharset = false;
+    let hasLang = false;
+    let hasRobots = false;
+    let hasFavicon = false;
+    let hasJsonLd = false;
+    let hasForms = false;
+    let hasVideo = false;
+    let hasIframe = false;
+    let inlineStyles = 0;
+    let scripts = 0;
+    let cssLinks = 0;
+    let totalImages = 0;
+    let totalParagraphs = 0;
+
+    try {
+      hasOpenGraph = !!doc.querySelector('meta[property="og:title"]') || !!doc.querySelector('meta[property="og:image"]');
+      hasTwitterCard = !!doc.querySelector('meta[name="twitter:card"]') || !!doc.querySelector('meta[property="twitter:card"]');
+      hasCanonical = !!doc.querySelector('link[rel="canonical"]');
+      hasViewport = !!doc.querySelector('meta[name="viewport"]');
+      hasCharset = !!doc.querySelector('meta[charset]') || !!doc.querySelector('meta[http-equiv="Content-Type"]');
+      hasLang = !!(doc.documentElement.getAttribute('lang'));
+      hasRobots = !!doc.querySelector('meta[name="robots"]');
+      hasFavicon = !!doc.querySelector('link[rel="icon"]') 
+        || !!doc.querySelector('link[rel="shortcut icon"]')
+        || !!doc.querySelector('link[rel="apple-touch-icon"]');
+      hasJsonLd = !!doc.querySelector('script[type="application/ld+json"]');
+      hasForms = doc.querySelectorAll('form').length > 0;
+      hasVideo = doc.querySelectorAll('video').length > 0 
+        || doc.querySelectorAll('iframe[src*="youtube"]').length > 0
+        || doc.querySelectorAll('iframe[src*="vimeo"]').length > 0
+        || doc.querySelectorAll('iframe[src*="rutube"]').length > 0;
+      hasIframe = doc.querySelectorAll('iframe').length > 0;
+      inlineStyles = doc.querySelectorAll('[style]').length;
+      scripts = doc.querySelectorAll('script').length;
+      cssLinks = doc.querySelectorAll('link[rel="stylesheet"]').length;
+      totalImages = doc.querySelectorAll('img').length;
+      totalParagraphs = doc.querySelectorAll('p').length;
+    } catch (e) {
+      console.warn('Error in element checks:', e);
+    }
+
+    return {
+      title,
+      description,
+      htmlSize: html.length,
+      hasSSL: url.startsWith('https'),
+      hasTitle: !!title,
+      titleLength: title.length,
+      hasMetaDescription: !!description,
+      metaDescriptionLength: description.length,
+      hasMetaKeywords: !!doc.querySelector('meta[name="keywords"]'),
+      hasCanonical,
+      hasOpenGraph,
+      hasTwitterCard,
+      hasRobots,
+      hasViewport,
+      hasCharset,
+      hasLang,
+      h1Count,
+      h2Count,
+      h3Count,
+      totalHeadings: foundHeadings.length,
+      totalParagraphs,
+      totalImages,
+      imagesWithoutAlt,
+      totalLinks,
+      externalLinks,
+      internalLinks,
+      hasFavicon,
+      wordCount,
+      hasHttps: url.startsWith('https'),
+      usesWww: domain.startsWith('www.'),
+      hasForms,
+      hasVideo,
+      hasIframe,
+      hasInlineStyles: inlineStyles,
+      hasScripts: scripts,
+      hasCssLinks: cssLinks,
+      hasJsonLd,
+      foundMetaTags,
+      foundHeadings,
+    };
+  } catch (e) {
+    console.error('Fatal error in parseHTML:', e);
+    return defaults;
+  }
 }
 
 async function checkExternalResource(url: string, path: string): Promise<boolean> {
   try {
     const urlObj = new URL(url);
     const checkUrl = `${urlObj.origin}${path}`;
-    const response = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(checkUrl)}`, {
-      signal: AbortSignal.timeout(8000),
-    });
-    return response.ok;
+    
+    // Try multiple proxies
+    for (const proxyFn of CORS_PROXIES) {
+      try {
+        const signal = createTimeout(8000);
+        const response = await fetch(proxyFn(checkUrl), { signal });
+        if (response.ok) {
+          const text = await response.text();
+          // Verify it's not an error page
+          if (text && text.length > 10 && !text.includes('404') && !text.includes('Not Found')) {
+            return true;
+          }
+        }
+      } catch {
+        continue;
+      }
+    }
+    return false;
   } catch {
     return false;
   }
@@ -360,6 +528,16 @@ function generateIssues(data: ParsedData & { hasRobotsTxt: boolean; hasSitemap: 
       recommendation: 'Сократите title до 60 символов, чтобы он полностью отображался в поисковой выдаче.',
       impact: 'Улучшение отображения в сниппетах Google/Яндекс',
     });
+  } else if (data.titleLength < 10) {
+    issues.push({
+      id: nextId('seo'),
+      title: 'Слишком короткий title',
+      description: `Длина title: ${data.titleLength} символов. Рекомендуется 50-60 символов.`,
+      severity: 'medium',
+      category: 'seo',
+      recommendation: 'Расширьте title, добавив ключевые слова и описание страницы.',
+      impact: 'Улучшение релевантности в поисковой выдаче',
+    });
   }
 
   if (!data.hasMetaDescription) {
@@ -382,6 +560,16 @@ function generateIssues(data: ParsedData & { hasRobotsTxt: boolean; hasSitemap: 
       recommendation: 'Расширьте описание до 120-160 символов с ключевыми словами и призывом к действию.',
       impact: 'Более информативный сниппет в поисковой выдаче',
     });
+  } else if (data.metaDescriptionLength > 160) {
+    issues.push({
+      id: nextId('seo'),
+      title: 'Слишком длинный meta description',
+      description: `Длина description: ${data.metaDescriptionLength} символов. Рекомендуется не более 160 символов.`,
+      severity: 'low',
+      category: 'seo',
+      recommendation: 'Сократите description до 160 символов, чтобы он полностью отображался в поисковой выдаче.',
+      impact: 'Полное отображение описания в сниппете',
+    });
   }
 
   if (!data.hasOpenGraph) {
@@ -392,7 +580,7 @@ function generateIssues(data: ParsedData & { hasRobotsTxt: boolean; hasSitemap: 
       severity: 'medium',
       category: 'seo',
       recommendation: 'Добавьте теги og:title, og:description, og:image, og:url для корректного отображения в соцсетях.',
-      impact: 'Улучшение превью при partage в социальных сетях',
+      impact: 'Улучшение превью при публикации в социальных сетях',
     });
   }
 
@@ -404,7 +592,7 @@ function generateIssues(data: ParsedData & { hasRobotsTxt: boolean; hasSitemap: 
       severity: 'low',
       category: 'seo',
       recommendation: 'Добавьте <meta name="twitter:card" content="summary_large_image"> и связанные теги.',
-      impact: 'Красивые карточки при partage в Twitter/X',
+      impact: 'Красивые карточки при публикации в Twitter/X',
     });
   }
 
@@ -638,7 +826,7 @@ function generateIssues(data: ParsedData & { hasRobotsTxt: boolean; hasSitemap: 
     });
   }
 
-  if (data.hasScripts > 20) {
+  if (data.hasScripts > 30) {
     issues.push({
       id: nextId('tech'),
       title: `Много JavaScript-скриптов (${data.hasScripts})`,
@@ -668,25 +856,58 @@ function generateIssues(data: ParsedData & { hasRobotsTxt: boolean; hasSitemap: 
 export async function analyzeWebsite(url: string): Promise<AnalysisResult> {
   // Normalize URL
   let normalizedUrl = url.trim();
-  if (!normalizedUrl.startsWith('http')) {
+  if (!normalizedUrl) {
+    throw new Error('URL не может быть пустым');
+  }
+  
+  if (!normalizedUrl.startsWith('http://') && !normalizedUrl.startsWith('https://')) {
     normalizedUrl = `https://${normalizedUrl}`;
   }
 
+  // Validate URL
+  try {
+    new URL(normalizedUrl);
+  } catch {
+    throw new Error('Некорректный URL. Проверьте правильность адреса сайта.');
+  }
+
   // Fetch HTML
-  const html = await fetchWithProxy(normalizedUrl);
+  let html: string;
+  try {
+    html = await fetchWithProxy(normalizedUrl);
+  } catch (e) {
+    const errorMsg = e instanceof Error ? e.message : 'Неизвестная ошибка';
+    throw new Error(`Не удалось загрузить сайт: ${errorMsg}. Проверьте правильность URL и доступность сайта.`);
+  }
   
   if (!html || html.length < 100) {
-    throw new Error('Не удалось получить содержимое сайта. Возможно, сайт недоступен или блокирует запросы.');
+    throw new Error('Сайт вернул пустой ответ или слишком малый объём данных. Возможно, сайт блокирует запросы.');
+  }
+
+  // Check if it's actually HTML
+  const trimmedHtml = html.trim().toLowerCase();
+  if (!trimmedHtml.includes('<html') && !trimmedHtml.includes('<!doctype') && !trimmedHtml.includes('<head') && !trimmedHtml.includes('<body')) {
+    throw new Error('Сайт вернул не HTML-контент. Возможно, это API или файл другого типа.');
   }
 
   // Parse HTML
-  const parsed = parseHTML(html, normalizedUrl);
+  const parsed = safeParseHTML(html, normalizedUrl);
 
-  // Check external resources
-  const [hasRobotsTxt, hasSitemap] = await Promise.all([
-    checkExternalResource(normalizedUrl, '/robots.txt'),
-    checkExternalResource(normalizedUrl, '/sitemap.xml'),
-  ]);
+  // Check external resources (non-blocking, with timeout)
+  let hasRobotsTxt = false;
+  let hasSitemap = false;
+  
+  try {
+    const [robots, sitemap] = await Promise.allSettled([
+      checkExternalResource(normalizedUrl, '/robots.txt'),
+      checkExternalResource(normalizedUrl, '/sitemap.xml'),
+    ]);
+    
+    hasRobotsTxt = robots.status === 'fulfilled' ? robots.value : false;
+    hasSitemap = sitemap.status === 'fulfilled' ? sitemap.value : false;
+  } catch {
+    // Ignore errors for external resources
+  }
 
   // Combine data
   const fullData = { ...parsed, hasRobotsTxt, hasSitemap };
