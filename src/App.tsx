@@ -19,10 +19,90 @@ function App() {
   const [analysisComplete, setAnalysisComplete] = useState(false);
   const [currentData, setCurrentData] = useState<AnalysisData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [testMode, setTestMode] = useState(false);
+  const [testResults, setTestResults] = useState<string[]>([]);
 
   useEffect(() => {
     setIsLoaded(true);
   }, []);
+
+  const runTest = async (url: string, testName: string) => {
+    const results: string[] = [];
+    results.push(`\n🧪 Тест: ${testName}`);
+    results.push(`🔍 URL: ${url}`);
+    results.push('─'.repeat(50));
+    
+    try {
+      results.push('⏳ Начало анализа...');
+      const result = await analyzeWebsite(url);
+      
+      results.push(`✅ Анализ завершён успешно!`);
+      results.push(`\n📊 Результаты:`);
+      results.push(`  • Общая оценка: ${result.overallScore}/100`);
+      results.push(`  • Контент: ${result.contentScore}/100`);
+      results.push(`  • UX: ${result.uxScore}/100`);
+      results.push(`  • SEO: ${result.seoScore}/100`);
+      results.push(`  • Технические: ${result.technicalScore}/100`);
+      
+      results.push(`\n📈 Статистика:`);
+      results.push(`  • Заголовок: ${result.title || '(нет)'}`);
+      results.push(`  • H1: ${result.h1Count}, H2: ${result.h2Count}`);
+      results.push(`  • Изображения: ${result.totalImages} (без alt: ${result.imagesWithoutAlt})`);
+      results.push(`  • Ссылки: ${result.totalLinks}`);
+      results.push(`  • Слова: ${result.wordCount}`);
+      results.push(`  • HTTPS: ${result.hasHttps ? '✅' : '❌'}`);
+      results.push(`  • Viewport: ${result.hasViewport ? '✅' : '❌'}`);
+      results.push(`  • Favicon: ${result.hasFavicon ? '✅' : '❌'}`);
+      results.push(`  • Forms: ${result.hasForms ? '✅' : '❌'}`);
+      
+      results.push(`\n⚠️ Найдено проблем: ${result.issues.length}`);
+      if (result.issues.length > 0) {
+        results.push('Топ-5 проблем:');
+        result.issues.slice(0, 5).forEach((issue, idx) => {
+          results.push(`  ${idx + 1}. [${issue.severity.toUpperCase()}] ${issue.title}`);
+        });
+      }
+      
+      // Test conversion
+      const converted = convertToAnalysisData(result);
+      results.push(`\n✅ Конвертация данных успешна`);
+      results.push(`  • Название: ${converted.siteName}`);
+      results.push(`  • Проблемы в контенте: ${converted.content.issues.length}`);
+      results.push(`  • Проблемы в UX: ${converted.ux.issues.length}`);
+      results.push(`  • Проблемы в SEO: ${converted.seo.issues.length}`);
+      results.push(`  • Проблемы в технических: ${converted.technical.issues.length}`);
+      
+      return results;
+    } catch (error) {
+      results.push(`\n❌ Ошибка: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`);
+      return results;
+    }
+  };
+
+  const runAllTests = async () => {
+    setTestMode(true);
+    setTestResults([]);
+    
+    const allResults: string[] = ['=== ЗАПУСК ТЕСТОВ ===\n'];
+    
+    // Test 1: expomap.ru
+    const test1Results = await runTest(
+      'https://expomap.ru/conference/nedelya-bezopasnosti-techexpert/',
+      'Expomap.ru - Неделя безопасности Техэксперт'
+    );
+    allResults.push(...test1Results);
+    
+    // Test 2: nic-conf.ru
+    const test2Results = await runTest(
+      'https://nic-conf.ru/',
+      'NIC Conference - Связь. Перспективы. Технологии 2030'
+    );
+    allResults.push(...test2Results);
+    
+    allResults.push('\n=== ТЕСТЫ ЗАВЕРШЕНЫ ===');
+    
+    setTestResults(allResults);
+  };
 
   const handleAnalyze = async (url: string) => {
     setSiteUrl(url);
@@ -59,8 +139,45 @@ function App() {
       <Header />
       
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Test Mode Button */}
+        {!isAnalyzing && !analysisComplete && !error && !testMode && (
+          <div className="max-w-3xl mx-auto mb-6">
+            <button
+              onClick={runAllTests}
+              className="w-full py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-semibold rounded-xl transition-all duration-200 shadow-lg"
+            >
+              🧪 Запустить автоматические тесты (expomap.ru + nic-conf.ru)
+            </button>
+          </div>
+        )}
+
+        {/* Test Results */}
+        {testMode && (
+          <div className="max-w-4xl mx-auto mb-8">
+            <div className="bg-slate-800/80 rounded-2xl p-6 border border-slate-700/50">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-bold text-white">🧪 Результаты тестирования</h2>
+                <button
+                  onClick={() => {
+                    setTestMode(false);
+                    setTestResults([]);
+                  }}
+                  className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm"
+                >
+                  Закрыть
+                </button>
+              </div>
+              <div className="bg-slate-900/60 rounded-lg p-4 max-h-96 overflow-y-auto">
+                <pre className="text-sm text-slate-300 whitespace-pre-wrap font-mono">
+                  {testResults.length > 0 ? testResults.join('\n') : '⏳ Выполнение тестов...'}
+                </pre>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* URL Input */}
-        {!isAnalyzing && !analysisComplete && !error && (
+        {!isAnalyzing && !analysisComplete && !error && !testMode && (
           <UrlInput onAnalyze={handleAnalyze} />
         )}
 

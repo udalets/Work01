@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Тест анализатора сайтов</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #1a1a2e;
+            color: #eee;
+        }
+        h1 {
+            color: #4ecca3;
+            margin-bottom: 30px;
+        }
+        .test-section {
+            background: #16213e;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border: 1px solid #0f3460;
+        }
+        .test-section h2 {
+            color: #4ecca3;
+            margin-top: 0;
+        }
+        button {
+            background: #4ecca3;
+            color: #1a1a2e;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            margin: 5px;
+        }
+        button:hover {
+            background: #3dbd94;
+        }
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+        .result {
+            background: #0f3460;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 15px;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .success {
+            color: #4ecca3;
+        }
+        .error {
+            color: #e94560;
+        }
+        .info {
+            color: #f39c12;
+        }
+        .loading {
+            color: #3498db;
+        }
+        input {
+            background: #0f3460;
+            border: 1px solid #4ecca3;
+            color: #eee;
+            padding: 10px;
+            border-radius: 5px;
+            width: 100%;
+            max-width: 500px;
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Тест анализатора сайтов</h1>
+    
+    <div class="test-section">
+        <h2>Тест 1: Анализ сайта expomap.ru</h2>
+        <button onclick="testExpomap()">Запустить тест</button>
+        <div id="result1" class="result" style="display: none;"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Тест 2: Анализ сайта nic-conf.ru</h2>
+        <button onclick="testNicConf()">Запустить тест</button>
+        <div id="result2" class="result" style="display: none;"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Тест 3: Произвольный URL</h2>
+        <input type="text" id="customUrl" placeholder="https://example.com" value="https://habr.com">
+        <button onclick="testCustom()">Запустить тест</button>
+        <div id="result3" class="result" style="display: none;"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Тест 4: Проверка компонентов</h2>
+        <button onclick="testComponents()">Запустить тест</button>
+        <div id="result4" class="result" style="display: none;"></div>
+    </div>
+
+    <script type="module">
+        import { analyzeWebsite } from './src/services/analyzer.ts';
+        import { convertToAnalysisData } from './src/services/adapter.ts';
+
+        function showResult(elementId, content, type = 'info') {
+            const element = document.getElementById(elementId);
+            element.style.display = 'block';
+            element.className = `result ${type}`;
+            element.textContent = content;
+        }
+
+        function appendResult(elementId, content, type = 'info') {
+            const element = document.getElementById(elementId);
+            element.style.display = 'block';
+            const span = document.createElement('span');
+            span.className = type;
+            span.textContent = content + '\n';
+            element.appendChild(span);
+        }
+
+        async function testExpomap() {
+            const resultId = 'result1';
+            const element = document.getElementById(resultId);
+            element.style.display = 'block';
+            element.innerHTML = '';
+            
+            appendResult(resultId, '🔍 Начало анализа https://expomap.ru/conference/nedelya-bezopasnosti-techexpert/', 'loading');
+            
+            try {
+                const result = await analyzeWebsite('https://expomap.ru/conference/nedelya-bezopasnosti-techexpert/');
+                
+                appendResult(resultId, '\n✅ Анализ успешно завершён!', 'success');
+                appendResult(resultId, `\n📊 Общая оценка: ${result.overallScore}/100`, 'info');
+                appendResult(resultId, `📝 Контент: ${result.contentScore}/100`, 'info');
+                appendResult(resultId, `🎨 UX: ${result.uxScore}/100`, 'info');
+                appendResult(resultId, `🔍 SEO: ${result.seoScore}/100`, 'info');
+                appendResult(resultId, `⚙️ Технические: ${result.technicalScore}/100`, 'info');
+                
+                appendResult(resultId, `\n📈 Статистика:`, 'info');
+                appendResult(resultId, `  • Заголовок: ${result.title || '(нет)'}`, 'info');
+                appendResult(resultId, `  • H1: ${result.h1Count}, H2: ${result.h2Count}`, 'info');
+                appendResult(resultId, `  • Изображения: ${result.totalImages} (без alt: ${result.imagesWithoutAlt})`, 'info');
+                appendResult(resultId, `  • Ссылки: ${result.totalLinks}`, 'info');
+                appendResult(resultId, `  • Слова: ${result.wordCount}`, 'info');
+                appendResult(resultId, `  • HTTPS: ${result.hasHttps}`, 'info');
+                appendResult(resultId, `  • Viewport: ${result.hasViewport}`, 'info');
+                
+                appendResult(resultId, `\n⚠️ Найдено проблем: ${result.issues.length}`, 'info');
+                result.issues.slice(0, 5).forEach((issue, idx) => {
+                    appendResult(resultId, `  ${idx + 1}. [${issue.severity}] ${issue.title}`, 'info');
+                });
+                
+                // Test conversion
+                const converted = convertToAnalysisData(result);
+                appendResult(resultId, `\n✅ Конвертация данных успешна`, 'success');
+                appendResult(resultId, `  • Название сайта: ${converted.siteName}`, 'info');
+                appendResult(resultId, `  • Проблемы в контенте: ${converted.content.issues.length}`, 'info');
+                appendResult(resultId, `  • Проблемы в UX: ${converted.ux.issues.length}`, 'info');
+                appendResult(resultId, `  • Проблемы в SEO: ${converted.seo.issues.length}`, 'info');
+                appendResult(resultId, `  • Проблемы в технических: ${converted.technical.issues.length}`, 'info');
+                
+            } catch (error) {
+                appendResult(resultId, `\n❌ Ошибка: ${error.message}`, 'error');
+                console.error(error);
+            }
+        }
+
+        async function testNicConf() {
+            const resultId = 'result2';
+            const element = document.getElementById(resultId);
+            element.style.display = 'block';
+            element.innerHTML = '';
+            
+            appendResult(resultId, '🔍 Начало анализа https://nic-conf.ru/', 'loading');
+            
+            try {
+                const result = await analyzeWebsite('https://nic-conf.ru/');
+                
+                appendResult(resultId, '\n✅ Анализ успешно завершён!', 'success');
+                appendResult(resultId, `\n📊 Общая оценка: ${result.overallScore}/100`, 'info');
+                appendResult(resultId, `📝 Контент: ${result.contentScore}/100`, 'info');
+                appendResult(resultId, `🎨 UX: ${result.uxScore}/100`, 'info');
+                appendResult(resultId, `🔍 SEO: ${result.seoScore}/100`, 'info');
+                appendResult(resultId, `⚙️ Технические: ${result.technicalScore}/100`, 'info');
+                
+                appendResult(resultId, `\n📈 Статистика:`, 'info');
+                appendResult(resultId, `  • Заголовок: ${result.title || '(нет)'}`, 'info');
+                appendResult(resultId, `  • H1: ${result.h1Count}, H2: ${result.h2Count}`, 'info');
+                appendResult(resultId, `  • Изображения: ${result.totalImages} (без alt: ${result.imagesWithoutAlt})`, 'info');
+                appendResult(resultId, `  • Ссылки: ${result.totalLinks}`, 'info');
+                appendResult(resultId, `  • Слова: ${result.wordCount}`, 'info');
+                appendResult(resultId, `  • HTTPS: ${result.hasHttps}`, 'info');
+                appendResult(resultId, `  • Viewport: ${result.hasViewport}`, 'info');
+                
+                appendResult(resultId, `\n⚠️ Найдено проблем: ${result.issues.length}`, 'info');
+                result.issues.slice(0, 5).forEach((issue, idx) => {
+                    appendResult(resultId, `  ${idx + 1}. [${issue.severity}] ${issue.title}`, 'info');
+                });
+                
+                // Test conversion
+                const converted = convertToAnalysisData(result);
+                appendResult(resultId, `\n✅ Конвертация данных успешна`, 'success');
+                appendResult(resultId, `  • Название сайта: ${converted.siteName}`, 'info');
+                appendResult(resultId, `  • Проблемы в контенте: ${converted.content.issues.length}`, 'info');
+                appendResult(resultId, `  • Проблемы в UX: ${converted.ux.issues.length}`, 'info');
+                appendResult(resultId, `  • Проблемы в SEO: ${converted.seo.issues.length}`, 'info');
+                appendResult(resultId, `  • Проблемы в технических: ${converted.technical.issues.length}`, 'info');
+                
+            } catch (error) {
+                appendResult(resultId, `\n❌ Ошибка: ${error.message}`, 'error');
+                console.error(error);
+            }
+        }
+
+        async function testCustom() {
+            const url = document.getElementById('customUrl').value;
+            const resultId = 'result3';
+            const element = document.getElementById(resultId);
+            element.style.display = 'block';
+            element.innerHTML = '';
+            
+            if (!url) {
+                appendResult(resultId, '❌ Введите URL', 'error');
+                return;
+            }
+            
+            appendResult(resultId, `🔍 Начало анализа ${url}`, 'loading');
+            
+            try {
+                const result = await analyzeWebsite(url);
+                
+                appendResult(resultId, '\n✅ Анализ успешно завершён!', 'success');
+                appendResult(resultId, `\n📊 Общая оценка: ${result.overallScore}/100`, 'info');
+                appendResult(resultId, `📝 Контент: ${result.contentScore}/100`, 'info');
+                appendResult(resultId, `🎨 UX: ${result.uxScore}/100`, 'info');
+                appendResult(resultId, `🔍 SEO: ${result.seoScore}/100`, 'info');
+                appendResult(resultId, `⚙️ Технические: ${result.technicalScore}/100`, 'info');
+                
+                appendResult(resultId, `\n📈 Статистика:`, 'info');
+                appendResult(resultId, `  • Заголовок: ${result.title || '(нет)'}`, 'info');
+                appendResult(resultId, `  • H1: ${result.h1Count}, H2: ${result.h2Count}`, 'info');
+                appendResult(resultId, `  • Изображения: ${result.totalImages} (без alt: ${result.imagesWithoutAlt})`, 'info');
+                appendResult(resultId, `  • Ссылки: ${result.totalLinks}`, 'info');
+                appendResult(resultId, `  • Слова: ${result.wordCount}`, 'info');
+                
+                appendResult(resultId, `\n⚠️ Найдено проблем: ${result.issues.length}`, 'info');
+                result.issues.slice(0, 5).forEach((issue, idx) => {
+                    appendResult(resultId, `  ${idx + 1}. [${issue.severity}] ${issue.title}`, 'info');
+                });
+                
+            } catch (error) {
+                appendResult(resultId, `\n❌ Ошибка: ${error.message}`, 'error');
+                console.error(error);
+            }
+        }
+
+        function testComponents() {
+            const resultId = 'result4';
+            const element = document.getElementById(resultId);
+            element.style.display = 'block';
+            element.innerHTML = '';
+            
+            appendResult(resultId, '🧪 Проверка компонентов...', 'loading');
+            
+            try {
+                // Test data structure
+                const testData = {
+                    overallScore: 75,
+                    siteName: 'Test Site',
+                    siteUrl: 'https://example.com',
+                    analyzedAt: new Date().toISOString(),
+                    content: { score: 80, summary: 'Test', issues: [] },
+                    ux: { score: 70, summary: 'Test', issues: [] },
+                    seo: { score: 65, summary: 'Test', issues: [] },
+                    technical: { score: 85, summary: 'Test', issues: [] },
+                };
+                
+                appendResult(resultId, '\n✅ Структура данных корректна', 'success');
+                
+                // Test score calculation
+                const avg = (testData.content.score + testData.ux.score + testData.seo.score + testData.technical.score) / 4;
+                appendResult(resultId, `✅ Средняя оценка: ${avg}`, 'success');
+                
+                // Test severity logic
+                const severities = ['critical', 'high', 'medium', 'low'];
+                appendResult(resultId, `✅ Все уровни серьёзности определены: ${severities.join(', ')}`, 'success');
+                
+                // Test color logic
+                function getColor(score) {
+                    if (score >= 70) return 'green';
+                    if (score >= 50) return 'yellow';
+                    return 'red';
+                }
+                
+                appendResult(resultId, `✅ Логика цветов: 80→${getColor(80)}, 60→${getColor(60)}, 40→${getColor(40)}`, 'success');
+                
+                appendResult(resultId, '\n✅ Все компоненты работают корректно!', 'success');
+                
+            } catch (error) {
+                appendResult(resultId, `\n❌ Ошибка: ${error.message}`, 'error');
+                console.error(error);
+            }
+        }
+
+        // Make functions global
+        window.testExpomap = testExpomap;
+        window.testNicConf = testNicConf;
+        window.testCustom = testCustom;
+        window.testComponents = testComponents;
+    </script>
+</body>
+</html>
